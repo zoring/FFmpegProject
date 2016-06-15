@@ -1,6 +1,6 @@
 QT += core
 QT -= gui
-include(../xmlrpc2/maia.pri)
+include(../libmaia-master/maia.pri)
 CONFIG += c++11
 CONFIG   += link_pkgconfig
 PKGCONFIG += libavformat libavcodec libavfilter libavutil

@@ -14,8 +14,12 @@ public:
     explicit Service(QObject *parent = 0);
 
 private slots:
-    string SaveFile() ;
-    bool CreateFile(string FileName);
+    QString SaveFile() ;
+    bool CreateFile(QString FileName);
+    QString callState(int i);
+    QVariant birne(int x);
+    void nix();
+    QDateTime plusOneYear(QDateTime sometime);
 
 public slots:
 private :

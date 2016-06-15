@@ -1,0 +1,8 @@
+*.o
+moc_*
+Makefile
+ui_*
+qrc_*pp
+*.so*
+*.a
+*.pro.user*

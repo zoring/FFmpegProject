@@ -6,7 +6,8 @@ HandleFfmpeg::HandleFfmpeg(string FileName) :IsStart(false),partK(1), HasInditia
 {
     av_register_all();                                    //初始化注册所有要用的编码器解码器等
     avformat_network_init();                              //初始化网络流
-    InputName = "rtsp://192.168.2.12/1" ;                //媒体流输入端
+  //InputName = "rtsp://192.168.2.12/1" ;                //媒体流输入端
+    InputName = "/home/zoring/avier1.mp4";
     OutPutWays = "rtmp://0.0.0.0/myapp/test1" ;
     SavePath = FileName ;
     OutPutName = ""       ;                               //媒体流输出
@@ -25,29 +26,45 @@ HandleFfmpeg::HandleFfmpeg(string FileName) :IsStart(false),partK(1), HasInditia
 //特殊的操作参数而建的， 为了了解流程，完全可以无视它．
 
 bool HandleFfmpeg::OpenFile(string FileName, AVInputFormat* fmt ,AVDictionary** option  ){
-   AVDictionary *avdic =NULL;
-  av_dict_set(&avdic,"rtsp_transport", "tcp", 0);
-   av_dict_set(&avdic,"stimeout","1000000",0);
-  av_dict_set(&avdic, "max_delay","50000",0);
-   av_dict_set(&avdic,"fflags","nobuffer",0);
-  av_dict_set(&avdic,"allowed_media_types","video",0);
+    AVDictionary *avdic =NULL;
+    av_dict_set(&avdic,"rtsp_transport", "tcp", 0);
+    av_dict_set(&avdic,"stimeout","1000000",0);
+    av_dict_set(&avdic, "max_delay","50000",0);
+    av_dict_set(&avdic,"fflags","nobuffer",0);
+    av_dict_set(&avdic,"allowed_media_types","video",0);
     //ifcon->flags=AVFMT_FLAG_NOBUFFER;
     if ( avformat_open_input(&ifcon,InputName , fmt , &avdic) < 0 )
-        {
+    {
         printf(FileName.c_str()) ;
         printf ("Wrong path of open ");
         return false ;
     }
+
     return true ;
 }
+
+// 初始化解码器
+bool HandleFfmpeg::StaticOpenCodec(){
+    InputCodec = avcodec_find_decoder(i_video_stream->codec->codec_id) ;
+    if (!InputCodec)
+        return false;
+
+    //打开解码器
+    if(avcodec_open2(i_video_stream->codec, InputCodec, 0) < 0)
+        return false ;
+
+    return true ;
+}
+
+
 
 bool HandleFfmpeg::SaveVdieoPath(string FileName){
     fstream _file;
     _file.open(FileName,ios::in);
-   // if (_file)
-     //   return false;
+    // if (_file)
+    //   return false;
     SavePath = FileName ;
-   if (!CheckInformation() )
+    if (!CheckInformation() )
         return false;
     return true;
 }
@@ -56,7 +73,7 @@ bool HandleFfmpeg::SaveVdieoPath(string FileName){
 
 bool HandleFfmpeg::OpenStream(AVDictionary** option  ){
 
-    if ((avformat_find_stream_info(ifcon , option)) < 0 ) {
+    if ((avformat_find_stream_info(ifcon , option)) < 0 ) {      //avformat_open_input只是打开头文件，读取流是该函数
         printf ("There is no information in that open") ;
         return false;
     }
@@ -65,42 +82,49 @@ bool HandleFfmpeg::OpenStream(AVDictionary** option  ){
 
 /*查找该格式文件中是否有视频流，如果有將它賦值給i_video_stream，找不到直接返回false*/
 bool HandleFfmpeg::GetVeidoStream(){
-  
+
     //查找视频流的Index
     for (int i =0 ; i < ifcon->nb_streams ; i++){
-        if ( ifcon->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO ){
-       
+        if ( ifcon->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO ){   //codec为编码器，其中就是根据流的编码器找到视频流
+
             i_video_stream = ifcon->streams[i] ;
             videoindex = i;
-            return true ;
+
+        }
+        else if(ifcon->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO){
+            AVCodec* audioCode = avcodec_find_decoder(ifcon->streams[i]->codec->codec_id) ;
+            if (!audioCode)
+                return false;
+
+            //打开解码器
+            if(avcodec_open2(ifcon->streams[i]->codec, audioCode, 0) < 0)
+                return false ;
+
+
         }
     }
-    return false ;
+    return true ;
 }
 
 
 bool HandleFfmpeg::CheckInformation(){
-    av_dump_format(ifcon, 0, InputName, 0);                              //该函数的作用就是检查下初始化过程中设置的参数是否符合规范
-    avformat_alloc_output_context2(&ofcon ,NULL ,NULL, SavePath.c_str()) ;       //新建输入端
-    if (!ofcon) {
-        printf( "Could not create output context\n");
-       return false;
-    }
+    av_dump_format(ifcon, 0, InputName, 0);                              //将文件信息相关联
+
     return true;
 }
 
 bool HandleFfmpeg::CopyInformation(){
-    o_video_stream = avformat_new_stream(ofcon, i_video_stream->codec->codec);
-            if (!o_video_stream) {
-                printf( "Failed allocating output stream\n");
-            return false ;
-            }
+    o_video_stream = avformat_new_stream(ofcon, i_video_stream->codec->codec);    //复制编码器信息
+    if (!o_video_stream) {
+        printf( "Failed allocating output stream\n");
+        return false ;
+    }
     return true;
 }
 
 
 bool HandleFfmpeg::StaticLiveStream(){
-    avformat_alloc_output_context2(&ofmt_ctx,NULL, "flv",OutPutWays);
+    avformat_alloc_output_context2(&ofmt_ctx,0, "flv",OutPutWays);
     if(!ofmt_ctx)
     {
         printf("Could not create output context") ;
@@ -108,34 +132,34 @@ bool HandleFfmpeg::StaticLiveStream(){
     }
     OutFotmat = ofmt_ctx->oformat;
 
-   o_live_stream = avformat_new_stream(ofmt_ctx,i_video_stream->codec->codec);
-   if (!o_live_stream) {
-       printf("Failed allocating output stream \n");
-       return false ;
-   }
-   int ret = avcodec_copy_context(o_live_stream->codec, i_video_stream->codec) ;
-   if (ret < 0) {
-       printf ("Failed to copy context from input to output stream codec context\n");
-       return false;
-   }
-   //以下代码暂时没知道用途
-   o_live_stream->codec->codec_tag = 0;
-   if(ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-       o_live_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
-   av_dump_format(ofmt_ctx,0, OutPutWays, 1);
-   if (!(OutFotmat->flags & AVFMT_NOFILE)){
-       ret = avio_open(&ofmt_ctx->pb, OutPutWays, AVIO_FLAG_WRITE) ;
-       if (ret < 0){
-           printf("Could not open output URL '%s'", OutPutWays) ;
-           return false ;
-       }
-   }
-   ret =  avformat_write_header(ofmt_ctx, NULL) ;
-   if (ret < 0){
-       printf ("Error occurred when opening output URL \n");
-       return false;
-   }
-   return true;
+    o_live_stream = avformat_new_stream(ofmt_ctx,i_video_stream->codec->codec);
+    if (!o_live_stream) {
+        printf("Failed allocating output stream \n");
+        return false ;
+    }
+    int ret = avcodec_copy_context(o_live_stream->codec, i_video_stream->codec) ;
+    if (ret < 0) {
+        printf ("Failed to copy context from input to output stream codec context\n");
+        return false;
+    }
+    //以下代码暂时没知道用途
+    o_live_stream->codec->codec_tag = 0;
+    if(ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+        o_live_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+    av_dump_format(ofmt_ctx,0, OutPutWays, 1);
+    if (!(OutFotmat->flags & AVFMT_NOFILE)){
+        ret = avio_open(&ofmt_ctx->pb, OutPutWays, AVIO_FLAG_WRITE) ;     //打开ffmpeg输入输出文件
+        if (ret < 0){
+            printf("Could not open output URL '%s'", OutPutWays) ;
+            return false ;
+        }
+    }
+    ret =  avformat_write_header(ofmt_ctx, NULL) ;
+    if (ret < 0){
+        printf ("Error occurred when opening output URL \n");
+        return false;
+    }
+    return true;
 }
 
 void HandleFfmpeg::MoveOn(){
@@ -149,21 +173,22 @@ bool HandleFfmpeg::Start(){
         if (!OpenFile(SavePath) ) return false ;
         if (!OpenStream())      return false ;
         if (!CheckInformation() || !GetVeidoStream()) return false;
+        if (!StaticOpenCodec())     return false;
         if (!StaticLiveStream()) return false;
         HasInditial = true;
     }
-  printf( "HandleFfmpeg::Start\n");
-   StartStream();
-   return true;
+    printf( "HandleFfmpeg::Start\n");
+    StartStream();
+    return true;
 }
 
 bool HandleFfmpeg::Stop(){
- // lock.lockForWrite();
-  //  mutex.lock();
+    // lock.lockForWrite();
+    //  mutex.lock();
     NewSaveFile = true ;
     IsStart = false;
-  //  mutex.unlock();
-//    lock.unlock();
+    //  mutex.unlock();
+    //    lock.unlock();
 
 
     return true ;
@@ -172,28 +197,49 @@ bool HandleFfmpeg::Stop(){
 void HandleFfmpeg::SaveVideo(){
     av_write_trailer(ofcon);       //写入输出流文件尾
 
-  avcodec_close(ofcon->streams[0]->codec);
-   av_freep(&ofcon->streams[0]->codec);
-   av_freep(&ofcon->streams[0]);
+    avcodec_close(ofcon->streams[0]->codec);
+    av_freep(&ofcon->streams[0]->codec);
+    av_freep(&ofcon->streams[0]);
 
-  avio_close(ofcon->pb);
-   av_free(ofcon);
+    avio_close(ofcon->pb);
+    av_free(ofcon);
 }
+
+
 bool HandleFfmpeg::StaticOutFile(){
+    avformat_alloc_output_context2(&ofcon ,NULL ,NULL, SavePath.c_str()) ;       //新建输入端，最后一个NULL是叫ffmpeg自己寻找该封装格式
+    if (!ofcon) {
+        printf( "Could not create output context\n");
+        return false;
+    }
+    AVOutputFormat* OutFotmat = ofcon->oformat;
     o_video_stream =  avformat_new_stream(ofcon,i_video_stream->codec->codec);                      //将流信息输入到输出端
     if (!o_video_stream) {
         printf( "Failed allocating output stream\n");
         return false;
     }
-   if( avcodec_copy_context(o_video_stream->codec, i_video_stream->codec) < 0)
-        {printf( "Failed to copy context from input to output stream codec context\n");
+    if( avcodec_copy_context(o_video_stream->codec, i_video_stream->codec) < 0)
+    {printf( "Failed to copy context from input to output stream codec context\n");
         return false;
-        }
-     av_dump_format(ifcon, 0, InputName, 0);                              //该函数的作用就是检查下初始化过程中设置的参数是否符合规范
-   if( (avio_open(&ofcon->pb, SavePath.c_str(),AVIO_FLAG_WRITE)) < 0 )
-      { printf( "Could not open output URL '%s'", SavePath.c_str());
+    }
+
+
+       o_video_stream->codec->codec_tag = 0;
+       if(ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+           o_video_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+     av_dump_format(ofcon, 0, SavePath.c_str(), 1);                              //该函数的作用就是检查下初始化过程中设置的参数是否符合规范
+
+
+
+    if( (avio_open(&ofcon->pb, SavePath.c_str(),AVIO_FLAG_WRITE)) < 0 )
+    { printf( "Could not open output URL '%s'", SavePath.c_str());
         return false ;}
-    avformat_write_header (ofcon, NULL) ;   //将信息写入头文件
+
+   int ret = avformat_write_header (ofcon, NULL) ;   //将信息写入头文件
+   if(ret < 0)
+   {
+       printf("ERROR occurred when opening ofcon URL \n");
+   }
     return true;
 
 }
@@ -205,23 +251,36 @@ int HandleFfmpeg::ChangeTimeBase(AVPacket* pak,AVRational Sourcetimebase ,AVRati
     pak->pos = -1;
 }
 
+
+
+
+
 /*开始推流*/
 void HandleFfmpeg::StartStream(){
-
-    if (!StaticOutFile()) return ;
+    int choice =2;
+    if(choice == 1)
+    {if (!StaticOutFile()) return ;}
+    else{
+        if(!CreateOutPutCode(SavePath.c_str(),i_video_stream->codec,ofcon)) return;
+    }
 
     int64_t pts, dts;
     int dur;
     AVStream *in_stream, *out_stream;
-     IsStart = true ;
-     int i =0;
-     int frame_index = 0;
-     bool saveit = true;
-     bool FristPacket = true;
+    IsStart = true ;
+    int i =0;
+    int frame_index = 0;
+    bool saveit = true;
+    bool FristPacket = true;
     int64_t start_time ;
+    int64_t start_time_d = av_gettime();
     int64_t start_timeCoding;
-     while(1) {
-    i++;
+
+  inputFrame = avcodec_alloc_frame();
+
+    // ChangeSaveVideoParams();
+    while(1) {
+        i++;
 
         av_init_packet(&packet) ;
         packet.size = 0 ;
@@ -232,6 +291,9 @@ void HandleFfmpeg::StartStream(){
 
         if(packet.size<=0)
             continue;
+        if(videoindex != packet.stream_index)
+                continue;
+
         // 写入pts 和 dts
         if(packet.pts==AV_NOPTS_VALUE){
             //没有pts的情况
@@ -244,68 +306,213 @@ void HandleFfmpeg::StartStream(){
             packet.dts=packet.pts;
             packet.duration=(double)calc_duration/(double)(av_q2d(time_base1)*AV_TIME_BASE);       //计算视频结束时间
         }
-//       if (packet.stream_index == videoindex)
-//       {
-//           AVRational time_base = i_video_stream->time_base;
-//          AVRational time_base_q = {1,AV_TIME_BASE} ;
-//           int64_t pts_time = av_rescale_q(packet.dts, time_base,time_base3);      //计算packet的PTS,将时间从一个timebase调整到另一个timebase
-//           int64_t now_time = av_gettime() - start_time;                    //计算现在的时间距离开始的时间
-//          if (pts_time > now_time)
-//               av_usleep(pts_time - now_time);
-//       }
-    in_stream = ifcon->streams[packet.stream_index] ;
-    out_stream = ofmt_ctx->streams [packet.stream_index] ;
-    //复制包信息
-    pts = packet.pts;
-    dts = packet.dts;
-    dur = packet.duration;
-    ChangeTimeBase(&packet,in_stream->time_base,out_stream->time_base);
-    if (packet.stream_index == videoindex){
-        printf ("Send %8d video frames to output URL \n" , frame_index) ;
-        frame_index ++;
-    }
-    int ret = av_write_frame(ofmt_ctx, & packet) ;
+        //如果点播时候就要计算延时，不然一下子就完了
+        if(packet.stream_index==videoindex){
+            AVRational time_base=ifcon->streams[videoindex]->time_base;
+            AVRational time_base_q={1,AV_TIME_BASE};
+            int64_t pts_time = av_rescale_q(packet.dts, time_base, time_base_q);
+            int64_t now_time = av_gettime() - start_time_d;
+            if (pts_time > now_time)
+                av_usleep(pts_time - now_time);
 
-    if (ret < 0)
-    {
-        printf("ERROR muxing packet %d \n", ret);
-    }
-     if( NewSaveFile  && IsStart)
-    {
-     NewSaveFile = false;
-     saveit = true;
-     FristPacket = true;
-     StaticOutFile() ;
-    }
-    if (NewSaveFile && saveit)
-    {
-        saveit = false;
-        SaveVideo();
-
-    }
-    if (!NewSaveFile )
-       {
-        if (FristPacket)
-         {start_time = pts ;
-            start_timeCoding = dts;
-           FristPacket = false ;
         }
-       pts -= start_time ;
-        dts -= start_timeCoding ;
-       packet.pts = pts;
-         packet.dts =dts;
-          packet.duration =dur;
-           ChangeTimeBase(&packet,in_stream->time_base,o_video_stream->time_base ) ;
-           av_write_frame(ofcon, &packet);
-    }
-    av_free_packet(&packet);
+        in_stream = ifcon->streams[packet.stream_index] ;
+        AVCodecContext *test = in_stream->codec;
+        out_stream = ofmt_ctx->streams [packet.stream_index] ;
+
+        //复制包信息
+        pts = packet.pts;
+        dts = packet.dts;
+        dur = packet.duration;
+        ChangeTimeBase(&packet,in_stream->time_base,out_stream->time_base);
+
+        if (packet.stream_index == videoindex){
+            printf ("Send %8d video frames to output URL \n" , frame_index) ;
+            frame_index ++;
+        }
+        int ret = av_write_frame(ofmt_ctx, & packet) ;
+
+        if (ret < 0)
+        {
+            printf("ERROR muxing packet %d \n", ret);
+            continue;
+        }
+
+        if (i == 5000)
+            Stop();
+        if( NewSaveFile  && IsStart)
+        {
+            NewSaveFile = false;
+            saveit = true;
+            FristPacket = true;
+            if(choice == 1)
+            {if (!StaticOutFile()) return ;}
+            else{
+                if(!CreateOutPutCode(SavePath.c_str(),i_video_stream->codec,ofcon)) return;
+            }
+        }
+        if (NewSaveFile && saveit)
+        {
+            saveit = false;
+            SaveVideo();
+
+        }
+        if (!NewSaveFile )
+        {
+            if (FristPacket)
+            {start_time = pts ;
+                start_timeCoding = dts;
+                FristPacket = false ;
+            }
+           pts -= start_time ;
+           dts -= start_timeCoding ;
+            packet.pts = pts;
+            packet.dts = dts;
+            packet.duration =dur;
+            if(choice == 1)
+            { ChangeTimeBase(&packet,in_stream->time_base,o_video_stream->time_base ) ;
+                av_write_frame(ofcon, &packet);
+            }
+
+            else{
+
+               o_video_stream = ofcon->streams[packet.stream_index];
+               EnCodeVidoe(packet);
+
+            }
+        }
+
+
+
+        av_free_packet(&packet);
 
 
 
 
     }
 
- avformat_close_input(&ifcon);
+    avformat_close_input(&ifcon);
 
 
+}
+
+
+
+//编码格式
+bool HandleFfmpeg::CreateOutPutCode(const char* outputname,AVCodecContext* incodecCnt,AVFormatContext *&outCnt)
+{
+    AVOutputFormat* ofmt = NULL;
+    if(avformat_alloc_output_context2(&outCnt, NULL, NULL, outputname) < 0 )
+        return false;
+    if (!outCnt)
+        return false;
+    ofmt = outCnt->oformat ;
+
+    // AVCodecContext* video_enc_ctx = NULL;
+    AVCodec* video_enc = NULL;
+    video_enc = avcodec_find_encoder(AV_CODEC_ID_H264) ;
+    AVStream* videostr = avformat_new_stream(outCnt, video_enc) ;
+    if( !videostr )
+        return false;
+    video_enc_ctx = videostr->codec;
+    video_enc_ctx->profile = FF_PROFILE_H264_HIGH;
+    video_enc_ctx->width = incodecCnt->width ;
+    video_enc_ctx->height = incodecCnt->height ;
+    video_enc_ctx->pix_fmt = PIX_FMT_YUV420P;
+    video_enc_ctx->time_base.num = 1;
+    video_enc_ctx->time_base.den = 25;
+    video_enc_ctx->bit_rate = incodecCnt->bit_rate ;
+    video_enc_ctx->gop_size = 500;//最大组数
+    video_enc_ctx->codec_tag = 0 ;
+    video_enc_ctx->max_b_frames = 20 ;
+    video_enc_ctx->qmin = 10;
+    video_enc_ctx->qmax = 51;
+
+    av_opt_set(video_enc_ctx->priv_data, "preset", "superfast", 0);
+   av_opt_set(video_enc_ctx->priv_data, "tune", "zerolatency", 0);
+    if(avcodec_open2(video_enc_ctx, video_enc, NULL ) < 0){
+        printf("编码器打开失败！\n");
+        return false;
+    }
+//    o_video_stream->codec->codec_tag = 0;
+//    if(ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+//        o_video_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+
+   // if (outCnt->oformat->flags & AVFMT_GLOBALHEADER)
+ //       outCnt->streams[videoindex]->codec->codec_tag  |= CODEC_FLAG_GLOBAL_HEADER;
+    av_dump_format(outCnt, 0, outputname, 1);
+    if (!(OutFotmat->flags & AVFMT_NOFILE))
+      if (avio_open(&(outCnt->pb), outputname, AVIO_FLAG_READ_WRITE) < 0)
+        return false;
+
+
+
+
+
+   if(avformat_write_header(outCnt, NULL) < 0)
+       return false;
+    return true;
+}
+
+//转码
+bool HandleFfmpeg::EnCodeVidoe(AVPacket& pkt ){
+
+     int finshFrame;
+    avcodec_decode_video2(i_video_stream->codec,inputFrame,&finshFrame,&pkt) ;
+    if(!inputFrame->data[0])
+        printf("====================================has no data=========================================\n");
+    if(finshFrame)
+    {      printf("====================================ok=========================================\n");
+        AVPacket* tmppkt = new AVPacket;
+        av_init_packet(tmppkt) ;
+        int size = video_enc_ctx->width * video_enc_ctx->height*3/2 ;
+        char* buf = new char[size] ;
+        memset(buf, 0, size);
+        tmppkt->data = (uint8_t *)buf ;
+        tmppkt->size = size;
+
+        inputFrame->pts = inputFrame->pkt_pts ;   //解决一个pts的问题,pkt_pts是pkt的pts，这里要将解码后的frame的pt同步，不然会造成编码时不能同步
+
+        if (avcodec_encode_video2(video_enc_ctx, tmppkt,inputFrame, &finshFrame) < 0)
+        {avio_close(ofcon->pb);
+            delete buf;
+            printf("====================================avcodec_encode_video2=========================================\n");
+            return -3;
+        }
+        if(inputFrame->key_frame)
+        {
+            tmppkt->flags |= AV_PKT_FLAG_KEY ;
+            tmppkt->dts = tmppkt->pts = 0;
+        }
+        printf("%d", finshFrame);
+        if(finshFrame)
+        {
+
+            AVStream* in_stream = ifcon->streams[pkt.stream_index];
+
+            AVStream* out_stream = ofcon->streams[pkt.stream_index];
+
+            tmppkt->pts = av_rescale_q_rnd(tmppkt->pts, in_stream->time_base, out_stream->time_base, AV_ROUND_INF);
+            tmppkt->dts = av_rescale_q_rnd(tmppkt->dts, in_stream->time_base, out_stream->time_base, AV_ROUND_INF);
+            tmppkt->duration = av_rescale_q(tmppkt->duration, in_stream->time_base, out_stream->time_base) ;
+            tmppkt->pos = -1;
+
+            if (av_interleaved_write_frame(ofcon,tmppkt) < 0)
+            {
+                return -3;}
+            return true;
+        }
+    }
+    return false;
+}
+
+
+int HandleFfmpeg::nextPTS(){
+    static int static_pts = 0;
+    return static_pts++;
+}
+
+int HandleFfmpeg::nextDTS(){
+    static int static_dts = 0;
+    return static_dts++;
 }

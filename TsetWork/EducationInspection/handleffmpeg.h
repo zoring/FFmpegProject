@@ -8,6 +8,7 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/time.h>
+#include <libavutil/opt.h>
 };
 
 #include <string>
@@ -25,6 +26,8 @@ public:
    // QReadWriteLock lock;
  //
 private:
+    bool CreateOutPutCode(const char* outputname,AVCodecContext* incodecCnt,AVFormatContext *&outCnt);
+
     void SaveVideo();
     void StartStream();
     bool OpenFile(string FileName , AVInputFormat* fmt =0,AVDictionary** option = 0 );
@@ -34,13 +37,18 @@ private:
     bool CopyInformation();
     bool StaticOutFile();
     bool StaticLiveStream();
+    bool StaticOpenCodec();
+    int nextPTS();
+    int nextDTS();
+    bool EnCodeVidoe(AVPacket &pkt  );
     int  ChangeTimeBase(AVPacket* pak,AVRational TargetTime ,AVRational Sourcetimebase , AVRounding rnd = (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));          //
     AVOutputFormat* OutFotmat ;                         //输入format
     AVFormatContext* ifcon , *ofcon, *ofmt_ctx ;        //context输入输出上下文
-
+     AVFrame* inputFrame;
     AVPacket packet;                                     //包
     AVStream *i_video_stream;
     AVStream *o_video_stream, *o_live_stream;
+    AVCodec* InputCodec;
     const char* InputName ,*OutPutName,*OutPutWays;
     string SavePath;
     int partK;
@@ -48,6 +56,8 @@ private:
     bool IsStart;
     bool HasInditial;
     bool NewSaveFile;
+    AVCodecContext* video_enc_ctx = NULL;
+    void test();
 };
 
 #endif // HANDLEFFMPEG_H

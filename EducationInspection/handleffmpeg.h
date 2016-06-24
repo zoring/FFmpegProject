@@ -33,14 +33,18 @@ private:
     bool CheckInformation();
     bool CopyInformation();
     bool StaticOutFile();
-    AVOutputFormat* OFm ;                         //输入format
-    AVFormatContext* ifcon , *ofcon ;        //context输入输出上下文
+    bool StaticLiveStream();
+    int  ChangeTimeBase(AVPacket* pak,AVRational TargetTime ,AVRational Sourcetimebase , AVRounding rnd = (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));          //
+    AVOutputFormat* OutFotmat ;                         //输入format
+    AVFormatContext* ifcon , *ofcon, *ofmt_ctx ;        //context输入输出上下文
+
     AVPacket packet;                                     //包
     AVStream *i_video_stream;
-    AVStream *o_video_stream;
-    const char* InputName ,*OutPutName;
+    AVStream *o_video_stream, *o_live_stream;
+    const char* InputName ,*OutPutName,*OutPutWays;
     string SavePath;
     int partK;
+    int videoindex;
     bool IsStart;
     bool HasInditial;
     bool NewSaveFile;

@@ -8,6 +8,8 @@
 #include "ffmpegthread.h"
 #include "handleffmpeg.h"
 #include <QtCore>
+#include "service.h"
+
 #define __STDC_CONSTANT_MACROS
 
 #ifdef _WIN32
@@ -33,41 +35,13 @@ extern "C"
 #endif
 using namespace std;
 HandleFfmpeg FFmpegThread::test = HandleFfmpeg("/home/zoring/2.mp4");
- QMutex mutex;
+
 int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
-    bool cansave = false;
-    string newfilename = "";
-    //set codeType UTF-8
 
-    FFmpegThread test;
-    test.start();
-    char inputchar;
-   while(1)
-    {
-      inputchar = getchar();
-        if(inputchar == ' ')
-        {
-            mutex.lock();
-            if (! test.StopFFmpeg())
-                return -1;
-            cansave = true;
-            mutex.unlock();
-        }
-        else if(inputchar == 'i' && cansave)
-        {
-            cin>>newfilename ;
-           mutex.lock();
-            if(!test.SaveFile(newfilename))
-                    return -2;
-            test.MoveOn();
-            cansave = false;
-             mutex.unlock();
-        }
 
-    }
-
+    Service x;
 
     return a.exec();
 }

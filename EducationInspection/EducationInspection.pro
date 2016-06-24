@@ -1,6 +1,6 @@
 QT += core
 QT -= gui
-
+include(../libmaia-master/maia.pri)
 CONFIG += c++11
 CONFIG   += link_pkgconfig
 PKGCONFIG += libavformat libavcodec libavfilter libavutil
@@ -12,8 +12,10 @@ TEMPLATE = app
 
 SOURCES += main.cpp \
     handleffmpeg.cpp \
-    ffmpegthread.cpp
+    ffmpegthread.cpp \
+    service.cpp
 
 HEADERS += \
     handleffmpeg.h \
-    ffmpegthread.h
+    ffmpegthread.h \
+    service.h

@@ -54,6 +54,7 @@ AVRational time_base_q = { 1, AV_TIME_BASE };
  char* buf ;
 int64_t begintime;
 int64_t LastPackTime;
+AVRational av_time_base_q;
 AVFilterContext *buffersrc_ctx =NULL, *buffersink_ctx =NULL;
 void printTime();
 bool InintEnCodecAACMsg(AVFormatContext *&pFormatCtx, AVStream *&fmt, AVStream *& infmt)
@@ -77,7 +78,7 @@ bool InintEnCodecAACMsg(AVFormatContext *&pFormatCtx, AVStream *&fmt, AVStream *
     AACCodecCnt->block_align = 0;
     AACCodecCnt->bit_rate = 128000;
     AACCodecCnt->channels = 1  ;
-    AACCodecCnt->sample_rate = Input_Audio_Stream->codec->sample_rate;
+    AACCodecCnt->sample_rate =  16000;//Input_Audio_Stream->codec->sample_rate;
     AACCodecCnt->sample_fmt = AV_SAMPLE_FMT_S16;
     AACCodecCnt->channel_layout = AV_CH_LAYOUT_MONO;;
    // AACCodecCnt->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
@@ -163,7 +164,6 @@ bool FindInputAudioStream()
     }
     return false;
 }
-
 
 
 bool FindInputAVStream()
@@ -318,105 +318,33 @@ void InitAudiotest(){
 
 
 
-bool TurnToAAC(AVFrame *&SourceFrame, AVPacket *&TPkt, AVCodecContext *&inputCodecCnt)
+bool TurnToAAC(AVFrame* &filt_frame)
 {
-    static int64_t startTime =0;
-    static int kl=0;
-    bufsize = 1024;
-    //bufsize = av_samples_get_buffer_size(NULL, inputCodecCnt->channels, inputCodecCnt->frame_size, inputCodecCnt->sample_fmt, 1);
-    static int size = 0;
-    static bool frist =true;
-    //cout<< SourceFrame->linesize[0]<< "fdf"<< bufsize<<endl;
-//    if (frist)
-//      { startTime = SourceFrame->pkt_pts;
-//        buf =new  char[bufsize];}
-//    if (size + SourceFrame->linesize[0] < bufsize)
-//    {
-//       // cout<<"SourceFrame memcpy"<<endl;
-//        memcpy(buf+size,SourceFrame->data[0],SourceFrame->linesize[0] );
-//        size += SourceFrame->linesize[0] ;
-//        return false;
+    AVPacket test;
+    test.size = 0;
+    test.data = NULL;
+    av_init_packet(&test) ;
+    int gotpacket;
 
-//    }
-//    else
-//    {
-//        kl++;
-//    int Copysize = bufsize - size;
-//    memcpy(buf+size,SourceFrame->data[0],Copysize);
-
-//    AVFrame *frame;
-
-//    frame = avcodec_alloc_frame();
-//    if ( !frame )
-//    {
-//        cout<< "Error in frame "<<endl;
-//        return false;
-//    }
-
-//    frame->nb_samples = inputCodecCnt->frame_size;
-//    frame->format = inputCodecCnt->sample_fmt;
-//    frame->channel_layout = SourceFrame->channel_layout;
-//    frame->data[0] = (uint8_t*)buf;
-//    //avcodec_fill_audio_frame(frame, inputCodecCnt->channels, inputCodecCnt->sample_fmt,(const uint8_t*)buf, bufsize, 1);
-//    SourceFrame->pts =av_frame_get_best_effort_timestamp(SourceFrame);
-//    frame->pts =  SourceFrame->pts;
-//    frame->pts =SourceFrame->pkt_pts;
-    SourceFrame->pts = SourceFrame->pkt_pts;
-    TPkt = NULL;
-    int finshPkt = 0;
-    TPkt = new AVPacket;
-    av_init_packet(TPkt);
-    TPkt->data = NULL;
-    TPkt->size = 0;
+   int audioret =  avcodec_encode_audio2(OutPut_Audio_Stream->codec, &test, filt_frame, &gotpacket);
 
 
+   if (gotpacket == 1 && audioret >=0)
+   {
 
-    int ret = avcodec_encode_audio2(OutPut_Audio_Stream->codec, TPkt, SourceFrame, &finshPkt);
+       test.pts = av_rescale_q( test.pts, OutPut_Audio_Stream->codec->time_base, OutPut_Audio_Stream->time_base);
 
-    if (ret <  0)
-    {
-//         delete buf;
-//         startTime = SourceFrame->pkt_pts;
-//         buf =  new  char [size];
-//         size = 0;
-         qDebug() << ERRORMSG + QString("TurnToAAC, error in encodec audio ");
-         return false;
-    }
-    if (finshPkt)
-    {
-
-//        delete buf;
-//         startTime = SourceFrame->pkt_pts;
-//        buf =  new  char [size];
-//        size = SourceFrame->linesize[0] - Copysize;
-//        memcpy(buf,SourceFrame->data[0] + Copysize ,size);
-        static bool frist=true;
-        if (frist)
-         {LastPackTime = av_rescale_q( TPkt->pts, Input_Audio_Stream->time_base,time_base_q);
-          frist =false;}
-        else
-        {
-            //cout<< " between two "<< av_rescale_q( TPkt->pts, Input_Audio_Stream->time_base,time_base_q) - LastPackTime <<endl;
-            LastPackTime = av_rescale_q( TPkt->pts, Input_Audio_Stream->time_base,time_base_q);
-        }
-        printTime();
-
-        TPkt->pts = av_rescale_q( TPkt->pts, Input_Audio_Stream->time_base, OutPut_Audio_Stream->time_base);
-
-        TPkt->dts = TPkt->pts;
-        TPkt->duration = av_rescale_q(TPkt->duration,Input_Audio_Stream->time_base, OutPut_Audio_Stream->time_base) ;
-        TPkt->pos = -1;
-        TPkt->flags |= AV_PKT_FLAG_KEY;
-        TPkt->stream_index = 0;
-        av_bitstream_filter_filter(aacbsfc, inputCodecCnt, NULL, &TPkt->data,&TPkt->size, TPkt->data, TPkt->size, 0);
-
-        return true;
-    }
-    else
-    { qDebug() << ERRORMSG + QString("TurnToAAC, no finshPkt ");
-        return false;
-    }
-
+       test.dts = test.pts;
+       test.duration = av_rescale_q(test.duration, OutPut_Audio_Stream->codec->time_base, OutPut_Audio_Stream->time_base) ;
+       cout<<test.pts<<" "<<test.duration<<endl;
+       test.pos = -1;
+       test.flags |= AV_PKT_FLAG_KEY;
+       test.stream_index = AudioIndex;
+       av_write_frame(Output_formatCnt, &test);
+       cout<<"finsh Codec"<<endl;
+   }
+   else
+       cout<<"Error"<<endl;
 
 }
 //}
@@ -429,21 +357,17 @@ void printTime(){
 //转码为AAC
 bool OtherToAAC(AVPacket*& pkt, AVFrame* &decoded_frame)
 {
-    int got_frame = 0;
-    int len;
+
 
     decoded_frame = avcodec_alloc_frame();
+    int got_frame;
+   static int64_t startTime;
 
-    int64_t nowtime = av_gettime();
-    len = avcodec_decode_audio4(Input_Audio_Stream->codec, decoded_frame, &got_frame, pkt);
+    int len = avcodec_decode_audio4(Input_Audio_Stream->codec, decoded_frame, &got_frame, pkt);
+     av_free_packet(pkt);
     if (len < 0)
     {
-        char error[128];
-                            const char *errbuf_ptr = error;
-                             av_strerror(len, error, sizeof(error));
-                             errbuf_ptr = strerror(AVUNERROR(len));
-                            cout<< errbuf_ptr<<endl;
-        qDebug() << ERRORMSG + QString("OtherToAAC, Error while decoding");
+
         cout<<"error0"<<endl;
         return false;
     }
@@ -451,27 +375,47 @@ bool OtherToAAC(AVPacket*& pkt, AVFrame* &decoded_frame)
     if (got_frame)
     {
 
-        av_free_packet(pkt);
-        pkt = NULL;
-        static int k;
-        if ( !TurnToAAC(decoded_frame, pkt, OutPut_Audio_Stream->codec) )
-        {
+                    AVFrame* frame = decoded_frame;
+                    AVFrame *filt_frame = nullptr;
+                    frame->pts = frame->pkt_pts;
 
-             //cout<<"error1"<<endl;
-            return false;
+        if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_PUSH) < 0) {
+                            av_log(NULL, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
+                            av_frame_free(&frame);
+                            return false;
+                        }
+                        frame->pts = AV_NOPTS_VALUE;
 
-        }
+                        /* pull filtered audio from the filtergraph */
+                        filt_frame = av_frame_alloc();
+                        while (1) {
+                            int ret = av_buffersink_get_frame_flags(buffersink_ctx, filt_frame, AV_BUFFERSINK_FLAG_NO_REQUEST);
+                            if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                                break;
+                            if(ret < 0)
+                            {
+                                av_frame_free(&frame);
+                                av_frame_free(&filt_frame);
+                                break;
+                            }
 
-        pkt->stream_index = AudioIndex;
-        return true;
-    }
-    else
-    {
-        return false;
+                            int64_t frame_pts = AV_NOPTS_VALUE;
+                            if (filt_frame->pts != AV_NOPTS_VALUE) {
+                                startTime = (startTime == AV_NOPTS_VALUE) ? 0 : startTime;
 
-    }
-    //av_free_packet(pkt);
 
+                                filt_frame->pts = frame_pts =
+                                    av_rescale_q(filt_frame->pts, buffersink_ctx->inputs[0]->time_base,    OutPut_Audio_Stream->codec->time_base);
+//                                        - av_rescale_q(startTime, av_time_base_q,    OutPut_Audio_Stream->codec->time_base);
+
+
+                            }
+
+                            av_frame_free(&frame);
+                            TurnToAAC(filt_frame);
+                            av_frame_free(&filt_frame);
+                        }
+                    }
 
 
 }
@@ -526,21 +470,21 @@ int initFilters()
                   return ret;
               }
 
-              ret = av_opt_set_int_list(buffersink_ctx, "sample_fmts", out_sample_fmts, -1,
+              ret = av_opt_set_bin(buffersink_ctx, "sample_fmts",(uint8_t*)&OutPut_Audio_Stream->codec->sample_fmt, sizeof(OutPut_Audio_Stream->codec->sample_fmt),
                   AV_OPT_SEARCH_CHILDREN);
               if (ret < 0) {
                   av_log(NULL, AV_LOG_ERROR, "Cannot set output sample format\n");
                   return ret;
               }
 
-              ret = av_opt_set_int_list(buffersink_ctx, "channel_layouts", out_channel_layouts, -1,
+              ret = av_opt_set_bin(buffersink_ctx, "channel_layouts", (uint8_t*)&OutPut_Audio_Stream->codec->channel_layout, sizeof(OutPut_Audio_Stream->codec->channel_layout),
                   AV_OPT_SEARCH_CHILDREN);
               if (ret < 0) {
                   av_log(NULL, AV_LOG_ERROR, "Cannot set output channel layout\n");
                   return ret;
               }
 
-              ret = av_opt_set_int_list(buffersink_ctx, "sample_rates", out_sample_rates, -1,
+              ret = av_opt_set_bin(buffersink_ctx, "sample_rates",(uint8_t*)& OutPut_Audio_Stream->codec->sample_rate, sizeof(OutPut_Audio_Stream->codec->sample_rate),
                   AV_OPT_SEARCH_CHILDREN);
               if (ret < 0) {
                   av_log(NULL, AV_LOG_ERROR, "Cannot set output sample rate\n");
@@ -557,6 +501,11 @@ int initFilters()
               inputs->filter_ctx = buffersink_ctx;
               inputs->pad_idx    = 0;
               inputs->next       = NULL;
+              if (!outputs->name || !inputs->name)
+                 {
+                     ret = AVERROR(ENOMEM);
+                     return ret;
+                 }
 
               if ((ret = avfilter_graph_parse_ptr(filter_graph, "anull",
                   &inputs, &outputs, nullptr)) < 0)
@@ -592,7 +541,7 @@ int main(int argc, char* argv[])
        return -4;
    AVPacket* pkt;
    //AVFrame* decoded_frame  =NULL;
-   AVRational av_time_base_q;
+
    av_time_base_q.num = 1;
    av_time_base_q.den = AV_TIME_BASE;
    int64_t start_time = av_gettime();
@@ -634,99 +583,12 @@ int main(int argc, char* argv[])
         {
             ChageTimeBase(pkt,Input_Video_Stream->time_base, Output_Video_Stream->time_base);
             av_write_frame(Output_formatCnt, pkt);
-       av_free_packet(pkt);
+         av_free_packet(pkt);
             continue ;
          }
+        OtherToAAC( pkt,  decoded_frame);
        // ChageTimeBase(pkt,Input_Video_Stream->time_base,av_time_base_q );
 
-
-        decoded_frame = avcodec_alloc_frame();
-        int got_frame;
-       static int64_t lasttime,startTime;
-
-        int len = avcodec_decode_audio4(Input_Audio_Stream->codec, decoded_frame, &got_frame, pkt);
-         av_free_packet(pkt);
-        if (len < 0)
-        {
-
-            char error[128];
-                                const char *errbuf_ptr = error;
-                                 av_strerror(len, error, sizeof(error));
-                                 errbuf_ptr = strerror(AVUNERROR(len));
-                                cout<< errbuf_ptr<<endl;
-            qDebug() << ERRORMSG + QString("OtherToAAC, Error while decoding");
-            cout<<"error0"<<endl;
-            continue;
-        }
-
-        if (got_frame)
-        {
-            int gotframe = 0;
-                        AVFrame* frame = decoded_frame;
-                        AVFrame *filt_frame = nullptr;
-                        frame->pts = frame->pkt_pts;
-
-            if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_PUSH) < 0) {
-                                av_log(NULL, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
-                                av_frame_free(&frame);
-                                continue;
-                            }
-                            frame->pts = AV_NOPTS_VALUE;
-
-                            /* pull filtered audio from the filtergraph */
-                            filt_frame = av_frame_alloc();
-                            while (1) {
-                                int ret = av_buffersink_get_frame_flags(buffersink_ctx, filt_frame, AV_BUFFERSINK_FLAG_NO_REQUEST);
-                                if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-                                    break;
-                                if(ret < 0)
-                                {
-                                    av_frame_free(&frame);
-                                    av_frame_free(&filt_frame);
-                                    break;
-                                }
-
-                                int64_t frame_pts = AV_NOPTS_VALUE;
-                                if (filt_frame->pts != AV_NOPTS_VALUE) {
-                                    startTime = (startTime == AV_NOPTS_VALUE) ? 0 : startTime;
-
-
-                                    filt_frame->pts = frame_pts =
-                                        av_rescale_q(filt_frame->pts, buffersink_ctx->inputs[0]->time_base,    OutPut_Audio_Stream->codec->time_base)
-                                            - av_rescale_q(startTime, av_time_base_q,    OutPut_Audio_Stream->codec->time_base);
-
-
-                                }
-
-                                av_frame_free(&frame);
-
-                                AVPacket test;
-                                test.size = 0;
-                                test.data = NULL;
-                                av_init_packet(&test) ;
-                                int gotpacket;
-
-                               int audioret =  avcodec_encode_audio2(OutPut_Audio_Stream->codec, &test, filt_frame, &gotpacket);
-
-
-                               if (gotpacket == 1 && audioret >=0)
-                               {
-
-                                   test.pts = av_rescale_q( test.pts, OutPut_Audio_Stream->codec->time_base, OutPut_Audio_Stream->time_base);
-
-                                   test.dts = test.pts;
-                                   test.duration = av_rescale_q(test.duration, OutPut_Audio_Stream->codec->time_base, OutPut_Audio_Stream->time_base) ;
-                                   cout<<test.pts<<" "<<test.duration<<endl;
-                                   test.pos = -1;
-                                   test.flags |= AV_PKT_FLAG_KEY;
-                                   test.stream_index = AudioIndex;
-                                   av_write_frame(Output_formatCnt, &test);
-                                   cout<<"finsh Codec"<<endl;
-                               }
-                               else
-                                   cout<<"Error"<<endl;
-                            }
-                        }
 
         }
        // av_free_packet(pkt);
